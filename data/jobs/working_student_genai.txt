@@ -1,0 +1,19 @@
+Working Student - Generative AI / RAG Developer
+
+We are looking for a working student to support the development of internal Generative AI applications.
+
+Responsibilities:
+- Build Retrieval-Augmented Generation pipelines for document search and question answering
+- Use Python to process documents, create embeddings, and connect to vector databases
+- Develop simple APIs using FastAPI
+- Build prototypes using Streamlit
+- Work with LangChain or LangGraph for LLM-based workflows
+- Implement prompt engineering techniques for reliable answers
+- Evaluate RAG outputs using test questions, retrieved context, and answer quality checks
+- Use Git and GitHub for version control
+
+Required skills:
+Python, RAG, embeddings, vector database, LangChain, LangGraph, FastAPI, Streamlit, Git, prompt engineering, evaluation, NLP.
+
+Nice to have:
+Docker, agentic AI, LLM evaluation, transformers, Hugging Face.

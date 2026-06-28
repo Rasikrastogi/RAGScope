@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.env
+*.env
+
+# Do not push personal/private files
+*.pdf
+data/resume/
+data/private/
+outputs/
+
+# Streamlit secrets
+.streamlit/
+
+# Editor files
+.vscode/
+.idea/
