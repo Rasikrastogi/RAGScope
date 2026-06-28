@@ -428,6 +428,249 @@ def replace_project_improvements(report: str) -> str:
     return report + "\n\n" + safe_section
 
 
+
+def replace_evidence_sections(
+    report: str,
+    skill_results: Dict[str, Any],
+    evidence_chunks: List[Dict[str, Any]],
+) -> str:
+    """
+    Replaces LLM-generated Strong Evidence and Weak/Missing Evidence sections
+    with deterministic evidence-quality sections.
+
+    The goal is to separate:
+    - strong evidence: project/research/implementation chunks
+    - weak evidence: skills that are only listed in a Skills/Education section
+    - missing evidence: job-relevant skills not detected in the CV
+    """
+
+    def short_quote(text: str, max_chars: int = 300) -> str:
+        text = re.sub(r"\s+", " ", text).strip()
+        if len(text) > max_chars:
+            return text[:max_chars].rstrip() + "..."
+        return text
+
+    def phrase_exists(text: str, phrase: str) -> bool:
+        """
+        Safer matching than raw substring search.
+        Prevents false positives such as 'git' inside 'Digital'.
+        """
+        text_lower = text.lower()
+        phrase_lower = phrase.lower().strip()
+
+        if not phrase_lower:
+            return False
+
+        # For short single-word aliases such as api, git, sql, rag, llm, use word boundaries.
+        if re.fullmatch(r"[a-z0-9+#.-]+", phrase_lower):
+            pattern = r"(?<![a-z0-9+#.-])" + re.escape(phrase_lower) + r"(?![a-z0-9+#.-])"
+            return re.search(pattern, text_lower) is not None
+
+        return phrase_lower in text_lower
+
+    def contains_skill_alias(text: str, skill: str) -> bool:
+        aliases = SKILL_ALIASES.get(skill, [skill])
+        return any(phrase_exists(text, alias) for alias in aliases)
+
+    def is_skills_or_education_chunk(text: str) -> bool:
+        lower = text.lower()
+
+        weak_section_terms = [
+            "skills",
+            "programming:",
+            "frameworks:",
+            "machine learning & deep learning:",
+            "nlp & genai:",
+            "visualization:",
+            "languages:",
+            "leadership",
+            "education",
+            "bachelors",
+            "masters",
+            "current gpa",
+            "cgpa",
+        ]
+
+        return any(term in lower for term in weak_section_terms)
+
+    def looks_like_project_evidence(text: str) -> bool:
+        lower = text.lower()
+
+        # These words suggest the CV chunk describes actual work, not only a skills list.
+        action_terms = [
+            "developing",
+            "building",
+            "built",
+            "designed",
+            "implemented",
+            "integrating",
+            "experimenting",
+            "conducted",
+            "evaluated",
+            "visualized",
+            "compared",
+            "tested",
+            "analyzed",
+            "created",
+            "developed",
+        ]
+
+        project_context_terms = [
+            "project",
+            "seminar",
+            "study",
+            "system",
+            "pipeline",
+            "pipelines",
+            "retrieval-augmented generation",
+            "retrieval augmented generation",
+            "sentence embeddings for semantic similarity",
+            "semantic similarity",
+            "domain classification",
+            "benchmark datasets",
+            "context-aware response generation",
+            "vector databases",
+            "semantic search",
+        ]
+
+        technical_terms = [
+            "rag",
+            "retrieval",
+            "embedding",
+            "embeddings",
+            "semantic search",
+            "vector database",
+            "vector databases",
+            "qdrant",
+            "pgvector",
+            "faiss",
+            "langchain",
+            "langgraph",
+            "llm",
+            "openai",
+            "mistral",
+            "sbert",
+            "mpnet",
+            "universal sentence encoder",
+            "hugging face",
+            "transformers",
+            "evaluation",
+            "metrics",
+        ]
+
+        weak_chunk = is_skills_or_education_chunk(text)
+        has_action = any(term in lower for term in action_terms)
+        has_project_context = any(term in lower for term in project_context_terms)
+        has_technical_content = any(term in lower for term in technical_terms)
+
+        # A skills/education chunk should not be strong evidence unless it clearly
+        # contains project/research action. This prevents CV_6-style skill lists
+        # from being treated as strong proof.
+        if weak_chunk and not has_action:
+            return False
+
+        return has_technical_content and (has_action or has_project_context)
+
+    cv_chunks = [chunk for chunk in evidence_chunks if chunk.get("source") == "CV"]
+
+    strong_lines: List[str] = []
+    weak_lines: List[str] = []
+
+    matched_skills = skill_results.get("matched", [])
+    missing_skills = skill_results.get("missing", [])
+
+    for skill in matched_skills:
+        matching_cv_chunks = [
+            chunk
+            for chunk in cv_chunks
+            if contains_skill_alias(chunk.get("text", ""), skill)
+        ]
+
+        strong_chunk = None
+
+        # Prefer real project/research chunks.
+        for chunk in matching_cv_chunks:
+            if looks_like_project_evidence(chunk.get("text", "")):
+                strong_chunk = chunk
+                break
+
+        if strong_chunk:
+            strong_lines.append(
+                f"- **{skill}**: Supported by `{strong_chunk['chunk_id']}` "
+                f"(similarity {strong_chunk['score']:.3f}). "
+                f"Evidence: \"{short_quote(strong_chunk['text'])}\""
+            )
+        elif matching_cv_chunks:
+            weak_lines.append(
+                f"- **{skill}**: Detected in the CV, but mainly as a listed skill or general statement. "
+                f"The retrieved evidence does not clearly show a completed project, implementation detail, result, or evaluation."
+            )
+        else:
+            weak_lines.append(
+                f"- **{skill}**: Detected by the overall skill matcher, but no supporting retrieved CV chunk was found in the current top-k evidence."
+            )
+
+    for skill in missing_skills:
+        weak_lines.append(
+            f"- **{skill}**: Required or useful for the job description, but not clearly detected in the CV."
+        )
+
+    if not strong_lines:
+        strong_lines.append("- No strong project-level evidence was found in the retrieved CV chunks.")
+
+    if not weak_lines:
+        weak_lines.append("- No major weak or missing evidence detected from the current skill list.")
+
+    strong_section = "**Strong Evidence:**\n\n" + "\n".join(strong_lines) + "\n"
+    weak_section = "**Weak or Missing Evidence:**\n\n" + "\n".join(weak_lines) + "\n"
+
+    strong_patterns = [
+        r"\*\*Strong Evidence:?\*\*.*?(?=\n\*\*Weak or Missing Evidence:?\*\*|\n\*\*Weak/Missing Evidence:?\*\*|\Z)",
+        r"##\s*Strong Evidence.*?(?=\n##\s*Weak|\Z)",
+        r"2\.\s*Strong Evidence.*?(?=\n3\.\s*Weak|\Z)",
+    ]
+
+    weak_patterns = [
+        r"\*\*Weak or Missing Evidence:?\*\*.*?(?=\n\*\*Suggested Weekend Project Improvements:?\*\*|\Z)",
+        r"\*\*Weak/Missing Evidence:?\*\*.*?(?=\n\*\*Suggested Weekend Project Improvements:?\*\*|\Z)",
+        r"##\s*Weak.*?(?=\n##\s*Suggested Weekend Project Improvements|\Z)",
+        r"3\.\s*Weak.*?(?=\n4\.\s*Suggested Weekend Project Improvements|\Z)",
+    ]
+
+    replaced_strong = False
+    for pattern in strong_patterns:
+        if re.search(pattern, report, flags=re.DOTALL | re.IGNORECASE):
+            report = re.sub(
+                pattern,
+                strong_section,
+                report,
+                flags=re.DOTALL | re.IGNORECASE,
+            )
+            replaced_strong = True
+            break
+
+    if not replaced_strong:
+        report += "\n\n" + strong_section
+
+    replaced_weak = False
+    for pattern in weak_patterns:
+        if re.search(pattern, report, flags=re.DOTALL | re.IGNORECASE):
+            report = re.sub(
+                pattern,
+                weak_section,
+                report,
+                flags=re.DOTALL | re.IGNORECASE,
+            )
+            replaced_weak = True
+            break
+
+    if not replaced_weak:
+        report += "\n\n" + weak_section
+
+    return report
+
+
+
 # -------------------------------------------------
 # Prompt building
 # -------------------------------------------------
@@ -648,13 +891,21 @@ def safety_checker_agent(state: AgentState) -> AgentState:
     report = state["report"]
 
     report = remove_unsafe_fake_metrics(report)
+    report = replace_evidence_sections(
+        report,
+        state["skill_results"],
+        state["evidence_chunks"],
+    )
     report = replace_project_improvements(report)
     report = replace_future_cv_bullets(report)
 
     return {
         **state,
         "report": report,
-        "agent_trace": add_trace(state, "Safety Checker Agent removed unsupported metrics and replaced risky CV sections."),
+        "agent_trace": add_trace(
+            state,
+            "Safety Checker Agent applied unsupported-metric filtering, evidence-quality checking, and safe CV/project sections.",
+        ),
     }
 
 
@@ -890,3 +1141,5 @@ if cv_file and jd_file:
 
 else:
     st.info("Upload both your CV PDF and a job description TXT file to start.")
+
+# %%
