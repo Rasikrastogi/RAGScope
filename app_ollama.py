@@ -1,6 +1,6 @@
+#%%
 import re
 from typing import Any, Dict, List, TypedDict
-
 import faiss
 import requests
 import streamlit as st
@@ -371,11 +371,11 @@ def replace_future_cv_bullets(report: str) -> str:
     with safe deterministic bullets. This prevents fake metrics.
     """
     safe_section = """
-**Future CV Bullet Ideas:**
+**CV Bullet Ideas:**
 
-1. Future bullet after completion: Built a local agentic RAG CV-job matching tool using MiniLM embeddings, FAISS vector search, Ollama, and LangGraph for evidence-grounded job-fit analysis.
-2. Future bullet after completion: Implemented document ingestion, text chunking, semantic retrieval, and source-backed reporting to identify matched skills, weak evidence, and missing GenAI requirements.
-3. Future bullet after completion: Added retrieval-quality controls and unsupported-metric filtering to reduce noisy evidence and prevent fabricated CV claims.
+1. Built a local agentic RAG CV-job matching tool using MiniLM embeddings, FAISS vector search, Ollama, Streamlit, and LangGraph for evidence-grounded job-fit analysis.
+2. Implemented document ingestion, text chunking, semantic retrieval, and source-backed reporting to identify matched skills, weak evidence, and missing GenAI requirements.
+3. Added retrieval-quality checks, lightweight RAG evaluation, and unsupported-metric filtering to reduce noisy evidence and prevent fabricated CV claims.
 """.strip()
 
     patterns = [
@@ -395,6 +395,35 @@ def replace_future_cv_bullets(report: str) -> str:
 
     return report + "\n\n" + safe_section
 
+def replace_interview_explanation(report: str) -> str:
+    """
+    Replaces the LLM-generated Interview Explanation section
+    with a safe first-person explanation.
+    This prevents the model from writing as an interviewer.
+    """
+    safe_section = """
+**Interview Explanation:**
+
+I built RAGScope as a local agentic RAG application to compare a CV against GenAI job descriptions in an evidence-grounded way. The system extracts text from documents, chunks the content, creates MiniLM embeddings, retrieves relevant evidence with FAISS, and uses Ollama for local report generation. I also added a LangGraph workflow with separate steps for requirement extraction, CV evidence review, gap analysis, report generation, and safety checking. To make the output more reliable, I added evidence-quality checks, lightweight RAG evaluation, and unsupported-metric filtering so the system does not turn listed skills into exaggerated CV claims.
+""".strip()
+
+    patterns = [
+        r"\*\*Interview Explanation:\*\*.*?\Z",
+        r"##\s*Interview Explanation.*?\Z",
+        r"6\.\s*Interview Explanation.*?\Z",
+    ]
+
+    for pattern in patterns:
+        if re.search(pattern, report, flags=re.DOTALL | re.IGNORECASE):
+            return re.sub(
+                pattern,
+                safe_section,
+                report,
+                flags=re.DOTALL | re.IGNORECASE,
+            )
+
+    return report + "\n\n" + safe_section
+
 
 def replace_project_improvements(report: str) -> str:
     """
@@ -402,12 +431,12 @@ def replace_project_improvements(report: str) -> str:
     with project-specific RAGScope improvements.
     """
     safe_section = """
-**Suggested Weekend Project Improvements:**
+**Project Status and Next Improvements:**
 
-1. Add a LangGraph-based agentic workflow with separate steps for job requirement extraction, CV evidence matching, gap analysis, report generation, and unsupported-claim checking.
-2. Add an evidence-quality checker that separates strong project evidence from weak listed skills and irrelevant non-technical experience.
-3. Add a small evaluation module with predefined test questions to check retrieval relevance, missing-skill detection, and unsupported metric removal.
-4. Add sample job descriptions, sample reports, screenshots, and a clear architecture diagram before uploading the project to GitHub.
+1. Completed: Added a LangGraph-based agentic workflow with separate steps for job requirement extraction, CV evidence matching, gap analysis, report generation, and unsupported-claim checking.
+2. Completed: Added an evidence-quality checker that separates strong project/research evidence from weak listed skills and missing job requirements.
+3. Completed: Added a lightweight RAG evaluation module to check retrieval health, CV evidence retrieval, job-description retrieval, missing-skill detection, and contact-noise filtering.
+4. Next improvement: Add safe sample CV/job-description files, screenshots, sample reports, and a clear architecture diagram before final GitHub polishing.
 """.strip()
 
     patterns = [
@@ -426,7 +455,6 @@ def replace_project_improvements(report: str) -> str:
             )
 
     return report + "\n\n" + safe_section
-
 
 
 def replace_evidence_sections(
@@ -461,7 +489,6 @@ def replace_evidence_sections(
         if not phrase_lower:
             return False
 
-        # For short single-word aliases such as api, git, sql, rag, llm, use word boundaries.
         if re.fullmatch(r"[a-z0-9+#.-]+", phrase_lower):
             pattern = r"(?<![a-z0-9+#.-])" + re.escape(phrase_lower) + r"(?![a-z0-9+#.-])"
             return re.search(pattern, text_lower) is not None
@@ -496,7 +523,6 @@ def replace_evidence_sections(
     def looks_like_project_evidence(text: str) -> bool:
         lower = text.lower()
 
-        # These words suggest the CV chunk describes actual work, not only a skills list.
         action_terms = [
             "developing",
             "building",
@@ -564,8 +590,8 @@ def replace_evidence_sections(
         has_technical_content = any(term in lower for term in technical_terms)
 
         # A skills/education chunk should not be strong evidence unless it clearly
-        # contains project/research action. This prevents CV_6-style skill lists
-        # from being treated as strong proof.
+        # contains project/research action. This prevents skill lists from being
+        # treated as strong proof.
         if weak_chunk and not has_action:
             return False
 
@@ -669,6 +695,157 @@ def replace_evidence_sections(
 
     return report
 
+
+# -------------------------------------------------
+# Lightweight RAG evaluation
+# -------------------------------------------------
+def evaluate_rag_pipeline(
+    all_chunks: List[Dict[str, Any]],
+    evidence_chunks: List[Dict[str, Any]],
+    skill_results: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Lightweight evaluation for the RAG pipeline.
+
+    This does not judge the final LLM answer.
+    It checks whether retrieval and safety-related preprocessing look healthy.
+    """
+
+    checks = []
+
+    def add_check(name: str, passed: bool, detail: str):
+        checks.append(
+            {
+                "name": name,
+                "passed": passed,
+                "detail": detail,
+            }
+        )
+
+    # 1. Vector index/chunk availability
+    add_check(
+        name="Usable chunks created",
+        passed=len(all_chunks) > 0,
+        detail=f"{len(all_chunks)} chunks available after filtering.",
+    )
+
+    # 2. Retrieval availability
+    add_check(
+        name="Evidence chunks retrieved",
+        passed=len(evidence_chunks) > 0,
+        detail=f"{len(evidence_chunks)} chunks retrieved for the query.",
+    )
+
+    # 3. CV evidence present
+    cv_retrieved = [chunk for chunk in evidence_chunks if chunk.get("source") == "CV"]
+    add_check(
+        name="CV evidence retrieved",
+        passed=len(cv_retrieved) > 0,
+        detail=f"{len(cv_retrieved)} retrieved chunks came from the CV.",
+    )
+
+    # 4. Job description evidence present
+    jd_retrieved = [
+        chunk for chunk in evidence_chunks
+        if chunk.get("source") == "JOB_DESCRIPTION"
+    ]
+    add_check(
+        name="Job description evidence retrieved",
+        passed=len(jd_retrieved) > 0,
+        detail=f"{len(jd_retrieved)} retrieved chunks came from the job description.",
+    )
+
+    # 5. Average similarity check
+    if evidence_chunks:
+        avg_similarity = sum(chunk["score"] for chunk in evidence_chunks) / len(evidence_chunks)
+    else:
+        avg_similarity = 0.0
+
+    add_check(
+        name="Average retrieval similarity reasonable",
+        passed=avg_similarity >= 0.25,
+        detail=f"Average similarity score: {avg_similarity:.3f}.",
+    )
+
+    # 6. Missing-skill detection active
+    missing_skills = skill_results.get("missing", [])
+    add_check(
+        name="Missing-skill detection active",
+        passed=isinstance(missing_skills, list),
+        detail=f"{len(missing_skills)} missing skills detected.",
+    )
+
+    # 7. Contact/header noise check
+    combined_retrieved_text = " ".join(
+        chunk.get("text", "").lower() for chunk in evidence_chunks
+    )
+
+    noise_terms = [
+        "rasikrastogi@gmail.com",
+        "+4915510191139",
+        "linkedin.com",
+        "passau, germany",
+    ]
+
+    noise_found = any(term in combined_retrieved_text for term in noise_terms)
+
+    add_check(
+        name="Contact/header noise removed",
+        passed=not noise_found,
+        detail="No contact/header noise found in retrieved evidence." if not noise_found else "Contact/header noise found in retrieved evidence.",
+    )
+
+    passed_count = sum(1 for check in checks if check["passed"])
+    total_count = len(checks)
+    evaluation_score = round((passed_count / total_count) * 100, 2) if total_count else 0
+
+    return {
+        "checks": checks,
+        "passed_count": passed_count,
+        "total_count": total_count,
+        "evaluation_score": evaluation_score,
+        "avg_similarity": avg_similarity,
+        "retrieved_chunks": len(evidence_chunks),
+    }
+
+
+def render_evaluation_panel(evaluation_results: Dict[str, Any]) -> None:
+    """
+    Renders evaluation results in Streamlit.
+    """
+
+    st.divider()
+    st.subheader("🧪 Lightweight RAG Evaluation")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric(
+        "Evaluation Score",
+        f"{evaluation_results['evaluation_score']}%"
+    )
+
+    col2.metric(
+        "Checks Passed",
+        f"{evaluation_results['passed_count']}/{evaluation_results['total_count']}"
+    )
+
+    col3.metric(
+        "Avg Similarity",
+        f"{evaluation_results['avg_similarity']:.3f}"
+    )
+
+    col4.metric(
+        "Retrieved Chunks",
+        evaluation_results["retrieved_chunks"]
+    )
+
+    st.markdown("### Evaluation Checks")
+
+    for check in evaluation_results["checks"]:
+        if check["passed"]:
+            st.success(f"{check['name']}: {check['detail']}")
+        else:
+            st.warning(f"{check['name']}: {check['detail']}")
 
 
 # -------------------------------------------------
@@ -898,6 +1075,7 @@ def safety_checker_agent(state: AgentState) -> AgentState:
     )
     report = replace_project_improvements(report)
     report = replace_future_cv_bullets(report)
+    report = replace_interview_explanation(report)
 
     return {
         **state,
@@ -1106,6 +1284,14 @@ if cv_file and jd_file:
         ):
             st.write(item["text"])
 
+    evaluation_results = evaluate_rag_pipeline(
+        all_chunks=all_chunks,
+        evidence_chunks=evidence_chunks,
+        skill_results=skill_results,
+    )
+
+    render_evaluation_panel(evaluation_results)
+
     st.divider()
     st.subheader("🧾 Local Grounded Report")
 
@@ -1141,5 +1327,3 @@ if cv_file and jd_file:
 
 else:
     st.info("Upload both your CV PDF and a job description TXT file to start.")
-
-# %%
