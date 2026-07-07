@@ -1,0 +1,33 @@
+Working Student / Internship - GenAI and RAG Engineering
+
+We are looking for a student assistant or intern to support the development of generative AI applications using Retrieval-Augmented Generation, semantic search, and LLM-based workflows.
+
+Responsibilities:
+- Build prototypes for RAG-based document search and question answering.
+- Work with Python-based AI pipelines.
+- Use embeddings, vector databases, and retrieval techniques to improve answer grounding.
+- Experiment with LangChain, LangGraph, or similar orchestration frameworks.
+- Develop simple user interfaces using Streamlit or similar tools.
+- Evaluate retrieval quality and identify missing or weak evidence in generated answers.
+- Document experiments, limitations, and implementation decisions.
+
+Required Skills:
+- Python
+- Machine Learning
+- NLP
+- Large Language Models
+- Retrieval-Augmented Generation
+- Embeddings
+- Vector Databases
+- LangChain
+- LangGraph
+- Streamlit
+- Git
+- API development
+
+Nice to Have:
+- Docker
+- FastAPI
+- Prompt Engineering
+- LLM evaluation
+- Agentic AI workflows

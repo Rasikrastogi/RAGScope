@@ -15,3 +15,8 @@ outputs/
 # Editor files
 .vscode/
 .idea/
+
+# Private user files
+*.pdf
+outputs/
+private/
